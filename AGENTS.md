@@ -66,5 +66,8 @@ Watch it happen: `docker logs -f beans`.
   README "Notes").
 - Config source of truth: the `ALLOWED` set + `write_ondemand()` in `beansd.py`; the
   `config.json` table in README. Add a key to both, or the registry rejects it.
+- Registry key `misc_args` maps to llama-ondemand's internal `server_args` (see
+  `write_ondemand`) — the public schema is `ctx` (first-class) + `misc_args`
+  (pass-through).
 - Rebuild after any change: `docker build -t beans:1ctr . && BEANS_ROOT=... docker compose
   up -d --force-recreate`. Verify boot with the diagnostics cheatsheet before declaring done.

@@ -44,13 +44,31 @@ def _model_id(cfg, name):
 
 
 def static_answer(cfg, name, method, path):
-    """Minimal answers for Olla probes while the model is asleep (no wake)."""
+    """Minimal answers for Olla probes while the model is asleep (no wake).
+
+    They carry the REAL context window (from the registry `ctx`) so Olla's
+    metadata extraction populates max_context_length and Hermes detects the
+    true number instead of falling back to its 256K default.
+    """
+    ctx = int(cfg.get("ctx", 4096))
     pid = _model_id(cfg, name)
-    if path in (b"/v1/models", b"/models"):
-        body = json.dumps({"object": "list", "data": [{"id": pid, "object": "model"}]}).encode()
+    if path in (b"/v1/models", b"/models") or path.startswith(b"/v1/models/"):
+        body = json.dumps({"object": "list", "data": [{
+            "id": pid, "object": "model", "created": 0, "owned_by": "beans",
+            "context_length": ctx}]}).encode()
+    elif path == b"/api/tags":
+        body = json.dumps({"models": [{
+            "name": name, "model": pid, "modified_at": "", "size": 0,
+            "context_length": ctx, "details": {}}]}).encode()
+    elif path == b"/props":
+        body = json.dumps({
+            "default_generation_settings": {"n_ctx": ctx},
+            "model_hparams": {"n_ctx_train": ctx},
+            "n_ctx": ctx,
+            "status": "sleeping", "model": name}).encode()
     elif path == b"/health":
         body = b'{"status":"ok"}'
-    else:  # /props, /slots and friends: enough to satisfy discovery
+    else:  # /slots and friends: enough to satisfy discovery
         body = json.dumps({"status": "sleeping", "model": name}).encode()
     resp = (b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
             b"Content-Length: " + str(len(body)).encode() +
@@ -172,10 +190,11 @@ class Bridge:
             method = first_line[0] if first_line else b""
             path = first_line[1].split(b"?")[0] if len(first_line) > 1 else b""
             if path in PROBE_PATHS or path.startswith(PROBE_PREFIXES) or path == b"/api/show":
-                if self.backend_up():
-                    self._forward(conn, req)
-                else:
-                    conn.sendall(static_answer(self.cfg, self.name, method, path))
+                # ALWAYS static: forwarding a probe into a still-loading backend can
+                # exceed Olla's health timeout mid-wake (seen 11-01: endpoint marked
+                # unhealthy, aliases evicted, strict 404s for ~30s). Static answers
+                # are instant, never wake, and discovery only needs a 200.
+                conn.sendall(static_answer(self.cfg, self.name, method, path))
                 return
             # Already up? Reuse — nothing new to allocate, so NO VRAM check. The guard
             # only gates the WAKE (spawning a new server that might not fit).

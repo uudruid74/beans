@@ -44,7 +44,7 @@ SUF_PENDING = "-pending"
 PID_FILE = ".download.pid"
 FAIL_FILE = ".download.failed"
 
-ALLOWED = {"name", "file", "url", "sha256", "ctx", "threads", "server_args",
+ALLOWED = {"name", "file", "url", "sha256", "ctx", "threads", "misc_args",
            "reasoning_budget", "embeddings", "pooling", "idle_seconds",
            "vram_headroom_mib"}
 
@@ -227,7 +227,7 @@ class BeansD:
             "weights_dir": m["dir"],
             "ctx": int(cfg.get("ctx", 4096)),
             "threads": int(cfg.get("threads", 4)),
-            "server_args": list(cfg.get("server_args", [])),
+            "server_args": list(cfg.get("misc_args", [])),  # registry misc_args -> llama-ondemand server_args
             "headroom_mib": 64,
             "min_free_mib": 64,
             "idle_seconds": int(cfg.get("idle_seconds", 300)),
@@ -535,6 +535,7 @@ class BeansD:
                 log("olla died — restarting")
                 self.olla_pid = None
                 self.reconcile()
+                self.ensure_olla()  # reconcile only respawns on config change; always bring it back
         self.shutdown()
 
     def shutdown(self):
