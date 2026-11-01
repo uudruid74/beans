@@ -11,9 +11,14 @@ container. This file is the operating manual for AI agents that run, debug, or e
   reconciles state on every change: spawn/kill bridges, run downloads.
 - **Nothing loads at boot.** Each model has a *bridge* process that wakes `llama-server`
   on the first real request (event-driven) and llama-ondemand kills it after `idle_seconds`.
-- **Each bridge IS the server**: one OpenAI-compatible endpoint per model, published
-  localhost-only (compose): `127.0.0.1:8081` (embeddings) / `127.0.0.1:8082` (chat) by
-  registry order. The bridge answers /v1/models with the model's real context window.
+- **Each bridge IS the server; beansd routes.** ONE published port — the beansd router on
+  `127.0.0.1:11434` — serves a normal OpenAI API. The `model` field in the request body
+  dispatches to the owning bridge (by config name or gguf basename). Meta routes
+  (`/v1/models`, `/v1/props`, `/health`) are answered by the router from the live registry,
+  so clients auto-detect each model's real context window (llamacpp + 65535). Bridges bind
+  loopback (`127.0.0.1`)
+  inside the container and are never published. Worker containers reach beans by name on
+  the `beans_net` external network: `http://beans:11434/v1`.
 
 ## Setup
 
@@ -35,9 +40,10 @@ Watch it happen: `docker logs -f beans`.
 
 ## Diagnostics cheatsheet
 
-- **Model up?** `curl -s http://127.0.0.1:8082/v1/models` → the model with its context_length.
-- **Server type (detection)?** `curl -s http://127.0.0.1:8082/v1/props` →
+- **Model up?** `curl -s http://127.0.0.1:11434/v1/models` → the model with its context_length.
+- **Server type (detection)?** `curl -s http://127.0.0.1:11434/v1/props` →
   `default_generation_settings.n_ctx` present = hermes classifies `llamacpp`.
+- **Unknown model?** POST with a bogus `model` → 404 `{"error":{"message":"model_not_found"}}`.
 - **What's loaded?** `docker exec beans sh -c 'ps -e | grep -c llama-server'` and
   `nvidia-smi --query-gpu=memory.used --format=csv,noheader`.
 - **Config drift / errors:** `docker logs beans | grep -E "ERROR|beansd"` — unknown config

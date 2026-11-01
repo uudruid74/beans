@@ -3,9 +3,11 @@
 #   BEANS_ROOT=/srv/models docker compose up -d --build
 # No personal paths live anywhere in this repo.
 #
-# No Olla: each model's bridge IS the server. Ports are published
-# localhost-only; the container also joins beans_net so worker containers can
-# reach beans by name (e.g. http://beans:8081 for embeddings).
+# No Olla: each model's bridge IS the server. ONE published port — the beansd
+# router on :11434 — serves the whole OpenAI API (model name in the body routes
+# to the owning bridge). Bridges bind loopback inside the container; workers on
+# the host use http://127.0.0.1:11434, worker containers reach beans by name on
+# the beans_net external network (e.g. http://beans:11434 for embeddings).
 services:
   beans:
     build: .
@@ -14,8 +16,7 @@ services:
     restart: unless-stopped
     gpus: all
     ports:
-      - "127.0.0.1:8081:8081"   # nomic-embed bridge (embeddings)
-      - "127.0.0.1:8082:8082"   # ornith bridge (chat)
+      - "127.0.0.1:11434:11434"   # beansd router — one OpenAI-compatible API
     volumes:
       - ${BEANS_ROOT:?Set BEANS_ROOT to your models registry root (one dir per model)}:/beans
     networks:

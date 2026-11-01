@@ -259,9 +259,11 @@ def main():
     bridge = Bridge(args)
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("0.0.0.0", args.listen_port))
+    # Internal-only: the router on :11434 is the single published entrypoint;
+    # bridges bind loopback so nothing else on the network can touch them.
+    server.bind(("127.0.0.1", args.listen_port))
     server.listen(16)
-    sys.stdout.write("bridge %s on :%d -> :%d (vram limit %d MiB)\n" %
+    sys.stdout.write("bridge %s on 127.0.0.1:%d -> :%d (vram limit %d MiB)\n" %
                      (args.model, args.listen_port, bridge.backend_port,
                       int(bridge.weights_mib + bridge.vram_headroom_mib)))
     sys.stdout.flush()

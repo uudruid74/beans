@@ -27,15 +27,21 @@ import json
 import os
 import select
 import signal
+import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 
 TREE_DEF = "/beans"
 CFG_OUT_DEF = "/config"
 STATE_DEF = "/var/lib/beans/state.json"
 BEGIN_PORT = 8081
+ROUTER_DEF = "0.0.0.0:11434"
+ROUTER_BACKEND = "127.0.0.1"
+BUFSZ = 65536
+SPLICE_TIMEOUT = 300.0
 DEBOUNCE_S = 1.5
 RECONCILE_MAX = 12
 SUF_DISABLED = "-disabled"
@@ -116,15 +122,17 @@ class Inotify:
 
 
 class BeansD:
-    def __init__(self, tree, cfg_out, state_file):
+    def __init__(self, tree, cfg_out, state_file, listen=ROUTER_DEF):
         self.tree = tree
         self.cfg_out = cfg_out
         self.state_file = state_file
         self.state = self.load_state()
-        self.bridges = {}   # dir -> (pid, port, name)
+        self.bridges = {}   # dir -> (pid, port, name, gguf_basename)
         self.downloads = {}  # pending dir path -> pid
         self.inot = Inotify()
         self.stop = False
+        self.listen = listen
+        self.router_sock = None
 
     # ------------------------------------------------------------------ state
     def load_state(self):
@@ -250,13 +258,14 @@ class BeansD:
         proc = subprocess.Popen(
             [sys.executable, "/opt/bridge.py", "--listen-port", str(port),
              "--model", m["cfg"].get("name") or name, "--config", cfg_path])
-        self.bridges[name] = (proc.pid, port, m["cfg"].get("name") or name)
+        gguf = os.path.basename(m["cfg"].get("file") or "")
+        self.bridges[name] = (proc.pid, port, m["cfg"].get("name") or name, gguf)
         log("bridge %s on :%d (pid %d)" % (name, port, proc.pid))
 
     def kill_model(self, name_path):
         """Kill a model's bridge + its llama-server (by unique gguf path)."""
         base = os.path.basename(name_path.rstrip("/"))
-        pid, port, _ = self.bridges.pop(base, (None, None, None))
+        pid, port, _, _ = self.bridges.pop(base, (None, None, None, None))
         if pid:
             try:
                 os.kill(pid, signal.SIGTERM)
@@ -461,6 +470,7 @@ class BeansD:
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)  # auto-reap children
         self.reconcile()
         self.inot.reset(self.tree)
+        self.start_router()
         log("ready — watching %s" % self.tree)
         last_event = 0.0
         while not self.stop:
@@ -471,7 +481,7 @@ class BeansD:
             elif last_event and (time.time() - last_event) >= DEBOUNCE_S:
                 last_event = 0.0
                 self.reconcile()
-            if self.bridges and all(not self._proc_alive(pid) for pid, _, _ in self.bridges.values()):
+            if self.bridges and all(not self._proc_alive(pid) for pid, _, _, _ in self.bridges.values()):
                 log("all bridges died — reconciling")
                 self.reconcile()
         self.shutdown()
@@ -481,6 +491,11 @@ class BeansD:
             return
         self.stop = True
         log("shutting down")
+        if self.router_sock:
+            try:
+                self.router_sock.close()
+            except OSError:
+                pass
         for base in list(self.bridges):
             self.kill_model(os.path.join(self.tree, base))
         for dpath, pid in list(self.downloads.items()):
@@ -490,14 +505,207 @@ class BeansD:
                 pass
         sys.exit(0)
 
+    # ----------------------------------------------------------------- router
+    # One published port (BEANS_LISTEN, default 0.0.0.0:11434). Meta routes are
+    # answered by beansd from the live scan; inference requests are dispatched by
+    # the body's `model` field to the owning bridge port and byte-spliced through
+    # (streaming SSE passes untouched). No router process, no handoff file.
+
+    def _read_request(self, conn):
+        data = b""
+        while b"\r\n\r\n" not in data and len(data) < (1 << 20):
+            chunk = conn.recv(8192)
+            if not chunk:
+                break
+            data += chunk
+        head, sep, rest = data.partition(b"\r\n\r\n")
+        if not sep:
+            return data
+        cl = 0
+        for line in head.split(b"\r\n"):
+            if line.lower().startswith(b"content-length:"):
+                try:
+                    cl = int(line.split(b":", 1)[1].strip())
+                except ValueError:
+                    cl = 0
+        while len(rest) < cl:
+            chunk = conn.recv(8192)
+            if not chunk:
+                break
+            rest += chunk
+        return head + b"\r\n\r\n" + rest
+
+    def _splice(self, conn, backend):
+        last = time.time()
+        socks = [conn, backend]
+        for s in socks:
+            s.settimeout(1.0)
+        while socks:
+            try:
+                r, _, _ = select.select(socks, [], [], 2.0)
+            except OSError:
+                return
+            if not r:
+                if time.time() - last > SPLICE_TIMEOUT:
+                    return
+                continue
+            for s in list(r):
+                try:
+                    data = s.recv(BUFSZ)
+                except OSError:
+                    data = b""
+                if not data:
+                    socks.remove(s)
+                    other = socks[0] if socks else None
+                    if other is not None:
+                        try:
+                            other.shutdown(socket.SHUT_WR)
+                        except OSError:
+                            return
+                    if not socks:
+                        return
+                else:
+                    last = time.time()
+                    peer = backend if s is conn else conn
+                    try:
+                        peer.sendall(data)
+                    except OSError:
+                        return
+
+    def _http(self, status, body, ctype=b"application/json"):
+        return (b"HTTP/1.1 %d %s\r\nContent-Type: %s\r\n"
+                b"Content-Length: %d\r\nConnection: close\r\n\r\n%s" %
+                (status, b"OK" if status == 200 else b"Not Found", ctype,
+                 len(body), body))
+
+    def _models_body(self):
+        """Merged /v1/models list from the live scan: id = config name, ctx intact."""
+        data = []
+        for m in self.scan():
+            if m["status"] != "active" or not m["gguf"]:
+                continue
+            cfg = m["cfg"] or {}
+            name = cfg.get("name") or os.path.basename(m["dir"])
+            data.append({"id": name, "object": "model", "created": 0,
+                         "owned_by": "beans",
+                         "context_length": int(cfg.get("ctx", 4096))})
+        return json.dumps({"object": "list", "data": data}).encode()
+
+    def _props_body(self):
+        """llama.cpp-shaped /v1/props with the default model's real n_ctx.
+
+        The default is the first ACTIVE model (registry order) that is not an
+        embeddings model — Hermes' llamacpp detection reads n_ctx from here, so
+        it must reflect the chat model's true context (e.g. 65535), never the
+        embeddings model's small window.
+        """
+        ctx = 4096
+        name = ""
+        for m in self.scan():
+            if m["status"] == "active" and m["gguf"]:
+                cfg = m["cfg"] or {}
+                if cfg.get("embeddings"):
+                    continue
+                ctx = int(cfg.get("ctx", 4096))
+                name = cfg.get("name") or os.path.basename(m["dir"])
+                break
+        return json.dumps({
+            "default_generation_settings": {"n_ctx": ctx},
+            "model_hparams": {"n_ctx_train": ctx},
+            "n_ctx": ctx,
+            "status": "ok",
+            "model": name}).encode()
+
+    def _bridge_port(self, model):
+        """Dispatch lookup by config name AND gguf basename."""
+        if not model:
+            return None
+        for pid, port, name, gguf in self.bridges.values():
+            if model in (name, gguf, os.path.basename(name or "")):
+                return port
+        return None
+
+    def _router_handle(self, conn):
+        try:
+            req = self._read_request(conn)
+            if not req:
+                return
+            first_line = req.split(b"\r\n", 1)[0].split(b" ")
+            method = first_line[0] if first_line else b""
+            path = first_line[1].split(b"?")[0] if len(first_line) > 1 else b""
+            if method == b"GET" and path in (b"/health",):
+                conn.sendall(self._http(200, b'{"status":"ok"}'))
+                return
+            if method == b"GET" and path in (b"/v1/models", b"/models"):
+                conn.sendall(self._http(200, self._models_body()))
+                return
+            if method == b"GET" and path in (b"/v1/props", b"/props"):
+                conn.sendall(self._http(200, self._props_body()))
+                return
+            # inference: pull `model` from the JSON body, dispatch, splice
+            model = None
+            try:
+                body_start = req.index(b"\r\n\r\n") + 4
+                model = json.loads(req[body_start:].decode(
+                    "utf-8", errors="replace")).get("model")
+            except Exception:
+                pass
+            port = self._bridge_port(model)
+            if port is None:
+                body = json.dumps({"error": {"message": "model_not_found"}}).encode()
+                conn.sendall(self._http(404, body))
+                return
+            try:
+                backend = socket.create_connection((ROUTER_BACKEND, port), timeout=5)
+            except OSError:
+                return
+            try:
+                backend.sendall(req)
+                self._splice(conn, backend)
+            except OSError:
+                pass
+            finally:
+                try:
+                    backend.close()
+                except OSError:
+                    pass
+        except Exception:
+            return
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    def _router_loop(self):
+        host, _, port = self.listen.rpartition(":")
+        port = int(port)
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((host or "0.0.0.0", port))
+        server.listen(32)
+        self.router_sock = server
+        log("router on %s:%d" % (host or "0.0.0.0", port))
+        while not self.stop:
+            try:
+                conn, _ = server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._router_handle, args=(conn,),
+                             daemon=True).start()
+
+    def start_router(self):
+        threading.Thread(target=self._router_loop, daemon=True).start()
+
 
 def main():
     ap = argparse.ArgumentParser(description="beans registry supervisor")
     ap.add_argument("--tree", default=os.environ.get("BEANS_TREE", TREE_DEF))
     ap.add_argument("--config-out", default=os.environ.get("BEANS_CFG_OUT", CFG_OUT_DEF))
     ap.add_argument("--state", default=os.environ.get("BEANS_STATE", STATE_DEF))
+    ap.add_argument("--beans-listen", default=os.environ.get("BEANS_LISTEN", ROUTER_DEF))
     args = ap.parse_args()
-    daemon = BeansD(args.tree, args.config_out, args.state)
+    daemon = BeansD(args.tree, args.config_out, args.state, args.beans_listen)
     daemon.run()
 
 

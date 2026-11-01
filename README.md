@@ -7,13 +7,13 @@ URL, and beans downloads the weights, lives on the wire, and powers down models 
 Adding a model is literally *one shared file* — no code, no rebuild, no config surgery.
 
 ```
-127.0.0.1:8081  ← nomic-embed bridge (embeddings)
-127.0.0.1:8082  ← ornith bridge (chat/completions, models)
+127.0.0.1:11434  ← beansd router — ONE OpenAI-compatible API for every model
 ```
 
-Each model is its **own** OpenAI-compatible server on its own port. Base URL =
-your model's port. The registry derives the port from the directory order
-(starting at 8081), so a fresh setup's ports follow the tree.
+One published port, one normal OpenAI API. The `model` name in the request body routes
+to the owning bridge; `/v1/models` and `/v1/props` are answered by the router from the
+live registry, so clients auto-detect each model's true context window (e.g. llamacpp +
+65535). Bridges bind loopback inside the container and are not published.
 
 ## Quick start
 
@@ -36,13 +36,13 @@ Create `$BEANS_ROOT/<anything>/config.json`. That's the whole setup:
 beans downloads the weights, verifies them, and starts serving:
 
 ```sh
-curl http://127.0.0.1:8082/v1/chat/completions \
+curl http://127.0.0.1:11434/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"my-model","messages":[{"role":"user","content":"hello"}]}'
 ```
 
-(Use the port of the model you configured — the examples below put chat on
-8082 and embeddings on 8081.)
+(The `model` field names the model; the router dispatches to its bridge. All
+clients use the one port.)
 
 ## How it works
 
@@ -54,8 +54,9 @@ curl http://127.0.0.1:8082/v1/chat/completions \
   VRAM returns to zero until the next request.
 - **Models load on demand.** First request after idle pays the load time (~10s), the rest
   are warm.
-- **No router layer.** Each bridge answers OpenAI-compatible routes directly with real
-  model metadata (context window included), so clients auto-detect the true window.
+- **One router.** beansd's listener on :11434 answers the meta routes from the live
+  registry and dispatches inference by `model` to the owning bridge — streaming SSE
+  passes through byte-for-byte. Bridges bind loopback; nothing else is published.
 
 ### Lifecycle
 
