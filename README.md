@@ -22,11 +22,11 @@ export BEANS_ROOT=/path/to/models          # required
 docker compose up -d --build
 ```
 
-Create `$BEANS_ROOT/<anything>/config.json`. That's the whole setup:
+Create `$BEANS_ROOT/<name>/config.json` — **the directory name IS the model name**
+(client sends `"model":"<name>"`, e.g. `my-model` below). That's the whole setup:
 
 ```json
 {
-  "name": "my-model",
   "file": "model.Q4_K_M.gguf",
   "url": "https://example.com/model.Q4_K_M.gguf",
   "sha256": "optional-checksum-verified-before-wiring"
@@ -85,7 +85,6 @@ don't fight the machine.
 | `file` | yes¹ | GGUF filename in this directory |
 | `url` | no | Download URL; used when the GGUF is missing (auto-provision) |
 | `sha256` | no | Checksum; verified after download before the model is wired |
-| `name` | no | Model alias served on the seam (defaults to the directory name) |
 | `ctx` | no | Context window in tokens (default 4096) — kept first-class so clients can
   auto-detect the real window |
 | `threads` | no | CPU threads (default 4) |

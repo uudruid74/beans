@@ -49,7 +49,7 @@ SUF_PENDING = "-pending"
 PID_FILE = ".download.pid"
 FAIL_FILE = ".download.failed"
 
-ALLOWED = {"name", "file", "url", "sha256", "ctx", "threads", "misc_args",
+ALLOWED = {"file", "url", "sha256", "ctx", "threads", "misc_args",
            "reasoning_budget", "embeddings", "pooling", "idle_seconds",
            "vram_headroom_mib"}
 
@@ -237,9 +237,9 @@ class BeansD:
             "watch_poll_seconds": 15,
             "start_timeout_seconds": 240,
             "lease_ahead_seconds": 120,
-            "default_model": cfg.get("name") or os.path.basename(m["dir"]),
+            "default_model": os.path.basename(m["dir"]),
             "vram_headroom_mib": int(cfg.get("vram_headroom_mib", 800)),
-            "models": {cfg.get("name") or os.path.basename(m["dir"]):
+            "models": {os.path.basename(m["dir"]):
                        {"file": cfg["file"], "role": "workhorse"}},
         }
         if cfg.get("reasoning_budget") is not None:
@@ -257,9 +257,9 @@ class BeansD:
         cfg_path = self.ondemand_path(name)
         proc = subprocess.Popen(
             [sys.executable, "/opt/bridge.py", "--listen-port", str(port),
-             "--model", m["cfg"].get("name") or name, "--config", cfg_path])
+             "--model", name, "--config", cfg_path])
         gguf = os.path.basename(m["cfg"].get("file") or "")
-        self.bridges[name] = (proc.pid, port, m["cfg"].get("name") or name, gguf)
+        self.bridges[name] = (proc.pid, port, name, gguf)
         log("bridge %s on :%d (pid %d)" % (name, port, proc.pid))
 
     def kill_model(self, name_path):
@@ -585,7 +585,7 @@ class BeansD:
             if m["status"] != "active" or not m["gguf"]:
                 continue
             cfg = m["cfg"] or {}
-            name = cfg.get("name") or os.path.basename(m["dir"])
+            name = os.path.basename(m["dir"])
             data.append({"id": name, "object": "model", "created": 0,
                          "owned_by": "beans",
                          "context_length": int(cfg.get("ctx", 4096))})
@@ -607,7 +607,7 @@ class BeansD:
                 if cfg.get("embeddings"):
                     continue
                 ctx = int(cfg.get("ctx", 4096))
-                name = cfg.get("name") or os.path.basename(m["dir"])
+                name = os.path.basename(m["dir"])
                 break
         return json.dumps({
             "default_generation_settings": {"n_ctx": ctx},
@@ -617,7 +617,7 @@ class BeansD:
             "model": name}).encode()
 
     def _bridge_port(self, model):
-        """Dispatch lookup by config name AND gguf basename."""
+        """Dispatch lookup by directory name AND gguf basename."""
         if not model:
             return None
         for pid, port, name, gguf in self.bridges.values():
