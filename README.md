@@ -7,10 +7,13 @@ URL, and beans downloads the weights, lives on the wire, and powers down models 
 Adding a model is literally *one shared file* — no code, no rebuild, no config surgery.
 
 ```
-127.0.0.1:11434/olla/openai/v1/chat/completions   ← OpenAI-compatible seam
-127.0.0.1:11434/olla/openai/v1/embeddings
-127.0.0.1:11434/olla/openai/v1/models
+127.0.0.1:8081  ← nomic-embed bridge (embeddings)
+127.0.0.1:8082  ← ornith bridge (chat/completions, models)
 ```
+
+Each model is its **own** OpenAI-compatible server on its own port. Base URL =
+your model's port. The registry derives the port from the directory order
+(starting at 8081), so a fresh setup's ports follow the tree.
 
 ## Quick start
 
@@ -33,10 +36,13 @@ Create `$BEANS_ROOT/<anything>/config.json`. That's the whole setup:
 beans downloads the weights, verifies them, and starts serving:
 
 ```sh
-curl http://127.0.0.1:11434/olla/openai/v1/chat/completions \
+curl http://127.0.0.1:8082/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"my-model","messages":[{"role":"user","content":"hello"}]}'
 ```
+
+(Use the port of the model you configured — the examples below put chat on
+8082 and embeddings on 8081.)
 
 ## How it works
 
@@ -48,8 +54,8 @@ curl http://127.0.0.1:11434/olla/openai/v1/chat/completions \
   VRAM returns to zero until the next request.
 - **Models load on demand.** First request after idle pays the load time (~10s), the rest
   are warm.
-- **Runs behind Olla** (a fast Go proxy) which owns the OpenAI-compatible seam and routes
-  by model alias.
+- **No router layer.** Each bridge answers OpenAI-compatible routes directly with real
+  model metadata (context window included), so clients auto-detect the true window.
 
 ### Lifecycle
 

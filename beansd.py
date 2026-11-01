@@ -35,7 +35,6 @@ import time
 TREE_DEF = "/beans"
 CFG_OUT_DEF = "/config"
 STATE_DEF = "/var/lib/beans/state.json"
-OLLA_BIN_DEF = "/usr/local/bin/olla"
 BEGIN_PORT = 8081
 DEBOUNCE_S = 1.5
 RECONCILE_MAX = 12
@@ -117,15 +116,11 @@ class Inotify:
 
 
 class BeansD:
-    def __init__(self, tree, cfg_out, state_file, olla_bin):
+    def __init__(self, tree, cfg_out, state_file):
         self.tree = tree
         self.cfg_out = cfg_out
         self.state_file = state_file
-        self.olla_bin = olla_bin
         self.state = self.load_state()
-        self.olla_pid = None
-        self.olla_cfg_sha = None
-        self.olla_cfg_path = os.path.join(cfg_out, "config.yaml")
         self.bridges = {}   # dir -> (pid, port, name)
         self.downloads = {}  # pending dir path -> pid
         self.inot = Inotify()
@@ -274,54 +269,6 @@ class BeansD:
                            capture_output=True)
         except OSError:
             pass
-
-    # ------------------------------------------------------------- Olla config
-    def olla_config(self, actives):
-        endpoints = []
-        aliases = {}
-        for m in actives:
-            port = self.port_for(m["dir"])
-            name = os.path.basename(m["dir"])
-            endpoints.append({"url": "http://127.0.0.1:%d" % port,
-                              "name": "local-%s" % name, "type": "llamacpp", "priority": 95})
-            model_name = m["cfg"].get("name") or name
-            aliases[model_name] = [os.path.join(m["dir"], m["cfg"]["file"])]
-        return {
-            "server": {"host": "0.0.0.0", "port": 11434},
-            "proxy": {"engine": "olla", "load_balancer": "least-connections"},
-            "discovery": {"static": {"endpoints": endpoints}},
-            "logging": {"level": "info", "format": "text"},
-            "model_aliases": aliases,
-        }
-
-    def write_olla_cfg(self, actives):
-        cfg = self.olla_config(actives)
-        text = json.dumps(cfg, indent=2)
-        sha = hashlib.sha256(text.encode()).hexdigest()
-        if sha == self.olla_cfg_sha:
-            return False
-        os.makedirs(self.cfg_out, exist_ok=True)
-        tmp = self.olla_cfg_path + ".tmp"
-        with io.open(tmp, "w", encoding="utf-8") as f:
-            f.write(text + "\n")
-        os.replace(tmp, self.olla_cfg_path)
-        self.olla_cfg_sha = sha
-        return True
-
-    def ensure_olla(self, restart=False):
-        if restart and self.olla_pid:
-            try:
-                os.kill(self.olla_pid, signal.SIGTERM)
-                time.sleep(1.0)
-            except OSError:
-                pass
-            self.olla_pid = None
-        if self.olla_pid is None:
-            env = dict(os.environ)
-            env["OLLA_CONFIG_FILE"] = self.olla_cfg_path
-            proc = subprocess.Popen([self.olla_bin], env=env)
-            self.olla_pid = proc.pid
-            log("olla up (pid %d)" % proc.pid)
 
     # ------------------------------------------------------------- downloads
     def start_download(self, dpath, cfg):
@@ -500,11 +447,6 @@ class BeansD:
                     self.spawn_bridge(m)
                     self.state["config_sha"][base] = sha
                     changed_any = True
-            # 5. Olla config — re-scan: renames above may have changed the active set
-            actives = [m for m in self.scan() if m["status"] == "active"]
-            if self.write_olla_cfg(actives):
-                self.ensure_olla(restart=True)
-                log("olla config updated")
             self.save_state()
             self.inot.reset(self.tree)
             if not changed_any:
@@ -517,9 +459,7 @@ class BeansD:
         signal.signal(signal.SIGTERM, lambda *_: self.shutdown())
         signal.signal(signal.SIGINT, lambda *_: self.shutdown())
         signal.signal(signal.SIGCHLD, signal.SIG_IGN)  # auto-reap children
-        # Ensure olla comes up with whatever's active at boot
         self.reconcile()
-        self.ensure_olla()
         self.inot.reset(self.tree)
         log("ready — watching %s" % self.tree)
         last_event = 0.0
@@ -531,11 +471,9 @@ class BeansD:
             elif last_event and (time.time() - last_event) >= DEBOUNCE_S:
                 last_event = 0.0
                 self.reconcile()
-            if self.olla_pid and not self._proc_alive(self.olla_pid):
-                log("olla died — restarting")
-                self.olla_pid = None
+            if self.bridges and all(not self._proc_alive(pid) for pid, _, _ in self.bridges.values()):
+                log("all bridges died — reconciling")
                 self.reconcile()
-                self.ensure_olla()  # reconcile only respawns on config change; always bring it back
         self.shutdown()
 
     def shutdown(self):
@@ -545,11 +483,6 @@ class BeansD:
         log("shutting down")
         for base in list(self.bridges):
             self.kill_model(os.path.join(self.tree, base))
-        if self.olla_pid:
-            try:
-                os.kill(self.olla_pid, signal.SIGTERM)
-            except OSError:
-                pass
         for dpath, pid in list(self.downloads.items()):
             try:
                 os.kill(pid, signal.SIGTERM)
@@ -563,9 +496,8 @@ def main():
     ap.add_argument("--tree", default=os.environ.get("BEANS_TREE", TREE_DEF))
     ap.add_argument("--config-out", default=os.environ.get("BEANS_CFG_OUT", CFG_OUT_DEF))
     ap.add_argument("--state", default=os.environ.get("BEANS_STATE", STATE_DEF))
-    ap.add_argument("--olla-bin", default=os.environ.get("BEANS_OLLA", OLLA_BIN_DEF))
     args = ap.parse_args()
-    daemon = BeansD(args.tree, args.config_out, args.state, args.olla_bin)
+    daemon = BeansD(args.tree, args.config_out, args.state)
     daemon.run()
 
 

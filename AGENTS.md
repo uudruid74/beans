@@ -8,11 +8,12 @@ container. This file is the operating manual for AI agents that run, debug, or e
 - **The registry is the truth.** `BEANS_ROOT/<model>/` = one directory per model:
   weights GGUF + `config.json`. Everything the container runs is *derived from this tree*.
 - **One supervisor, no magic.** `beansd.py` (PID 1) watches the tree with inotify and
-  reconciles state on every change: spawn/kill bridges, write Olla config, run downloads.
+  reconciles state on every change: spawn/kill bridges, run downloads.
 - **Nothing loads at boot.** Each model has a *bridge* process that wakes `llama-server`
   on the first real request (event-driven) and llama-ondemand kills it after `idle_seconds`.
-- **The seam** (`127.0.0.1:11434/olla/openai/v1/*`) is Olla, a stateless Go proxy. It
-  routes by model alias and restarts only on topology changes.
+- **Each bridge IS the server**: one OpenAI-compatible endpoint per model, published
+  localhost-only (compose): `127.0.0.1:8081` (embeddings) / `127.0.0.1:8082` (chat) by
+  registry order. The bridge answers /v1/models with the model's real context window.
 
 ## Setup
 
@@ -34,8 +35,9 @@ Watch it happen: `docker logs -f beans`.
 
 ## Diagnostics cheatsheet
 
-- **Seam up?** `curl -s http://127.0.0.1:11434/internal/health` → 200.
-- **Models visible?** `curl -s http://127.0.0.1:11434/olla/openai/v1/models`.
+- **Model up?** `curl -s http://127.0.0.1:8082/v1/models` → the model with its context_length.
+- **Server type (detection)?** `curl -s http://127.0.0.1:8082/v1/props` →
+  `default_generation_settings.n_ctx` present = hermes classifies `llamacpp`.
 - **What's loaded?** `docker exec beans sh -c 'ps -e | grep -c llama-server'` and
   `nvidia-smi --query-gpu=memory.used --format=csv,noheader`.
 - **Config drift / errors:** `docker logs beans | grep -E "ERROR|beansd"` — unknown config
@@ -48,10 +50,10 @@ Watch it happen: `docker logs -f beans`.
 - **503 with `beans: not enough VRAM for <model> (need ~N MiB, free M MiB)`** — by design.
   Fail-loud VRAM guard: another model is resident; unload it (idle-death or disable), raise
   VRAM, or resize. **Do not** "fix" by holding/retrying.
-- **Olla 502 `all endpoints unavailable (circuit breaker open)`** — the breaker opens after
-  repeated backend failures. It resets on Olla restart (topology change or container
-  restart). A *sustained* breaker usually means a bridge is crashing on every request —
-  grab `docker logs beans` for its traceback (bare-except paths: see `bridge.py`).
+- **HTTP 404/broken requests on a model** — usually the bridge died: `docker logs beans`
+  for its traceback (bare-except paths: see `bridge.py`). beansd respawns it on a tree
+  event; restart the container (`docker compose up -d --force-recreate`) to revive
+  immediately.
 - **Python imports in exec fail but the bridge works** — the bridge imports `llama_ondemand`
   because running `/opt/bridge.py` puts `/opt` on `sys.path`. In `docker exec`, use
   `cd /opt && python3 -c "import sys; sys.path.insert(0,'/opt'); ..."`.
@@ -61,7 +63,7 @@ Watch it happen: `docker logs -f beans`.
 ## Extending / the build
 
 - Files: `beansd.py` (supervisor), `bridge.py` (per-model wake + splice + VRAM guard),
-  `entrypoint.sh` (execs beansd), `Dockerfile` (llama.cpp server-cuda + Olla binary),
+  `entrypoint.sh` (execs beansd), `Dockerfile` (llama.cpp server-cuda),
   `docker-compose.yml` (BEANS_ROOT required), `vendor/llama_ondemand` (patched — see
   README "Notes").
 - Config source of truth: the `ALLOWED` set + `write_ondemand()` in `beansd.py`; the

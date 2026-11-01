@@ -2,6 +2,10 @@
 # Required: BEANS_ROOT must point at your models registry (see README.md).
 #   BEANS_ROOT=/srv/models docker compose up -d --build
 # No personal paths live anywhere in this repo.
+#
+# No Olla: each model's bridge IS the server. Ports are published
+# localhost-only; the container also joins beans_net so worker containers can
+# reach beans by name (e.g. http://beans:8081 for embeddings).
 services:
   beans:
     build: .
@@ -10,14 +14,14 @@ services:
     restart: unless-stopped
     gpus: all
     ports:
-      - "127.0.0.1:11434:11434"   # the seam — OpenAI-compatible endpoint
+      - "127.0.0.1:8081:8081"   # nomic-embed bridge (embeddings)
+      - "127.0.0.1:8082:8082"   # ornith bridge (chat)
     volumes:
       - ${BEANS_ROOT:?Set BEANS_ROOT to your models registry root (one dir per model)}:/beans
-    environment:
-      - OLLA_CONFIG_FILE=/config/config.yaml
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/internal/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+    networks:
+      - default
+      - beans_net
+
+networks:
+  beans_net:
+    external: true
