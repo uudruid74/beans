@@ -1,0 +1,6 @@
+# internal design record — not for public consumption
+DESIGN.md
+
+# python noise
+__pycache__/
+*.pyc
