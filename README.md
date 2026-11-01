@@ -102,6 +102,44 @@ don't fight the machine.
 Unknown keys are rejected loudly at startup — a bad config is an error, never a silent
 half-setup.
 
+## Point Hermes at beans
+
+Hermes agents talk to beans like any OpenAI base URL — `127.0.0.1:11434/v1`.
+
+**Model names = directory names** (forced consistency, no `name` key exists):
+the docked registry on this machine has `ornith` (chat, ctx 65535) and
+`nomic-embed` (embeddings, ctx 2048). Whatever you name a registry directory
+is the `model` string clients must send.
+
+**Embeddings** (in `~/.hermes/.env`):
+
+```sh
+EMBEDDING_API_BASE=http://127.0.0.1:11434/v1
+EMBEDDING_MODEL=nomic-embed
+EMBEDDING_FALLBACK_MODEL=nomic-embed
+```
+
+**Vision / auxiliary chat** (profile `config.yaml`, via `hermes config set`):
+
+```yaml
+auxiliary:
+  vision:
+    provider: custom
+    model: ornith
+    base_url: http://127.0.0.1:11434/v1
+    api_key: ''
+```
+
+Set it with: `hermes config set auxiliary.vision.model ornith --profile <p>`.
+
+**Detection stays native:** beans answers `/v1/models` (context_length intact)
+and `/v1/props` (llama.cpp shape, `n_ctx` = the chat model's real window), so
+Hermes still auto-classifies the server as `llamacpp` with the true context —
+no provider faking anywhere in the path.
+
+**Custom port:** export `BEANS_PORT` (default 11434) before `docker compose up`
+and use that same port in every URL above.
+
 ## Examples
 
 `examples/` has two ready-to-run configs (they download their own weights and replicate a

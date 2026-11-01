@@ -25,8 +25,24 @@ container. This file is the operating manual for AI agents that run, debug, or e
 
 ```sh
 export BEANS_ROOT=/path/to/models        # REQUIRED — compose fails loud without it
-docker compose up -d --build
+docker compose up -d --build            # optional: BEANS_PORT=11434 for a custom port
 ```
+
+**Hermes client wiring (one base URL, one port):**
+
+- Base URL everywhere: `http://127.0.0.1:11434/v1` (or `http://beans:11434/v1` from
+  a worker container on `beans_net`).
+- **Model names are the DIRECTORY names** — there is no `name` key in `config.json`,
+  so `mkdir $BEANS_ROOT/anything` makes `"anything"` the model id. On this machine:
+  `ornith` (chat) and `nomic-embed` (embeddings).
+- Env (shared): `EMBEDDING_API_BASE=http://127.0.0.1:11434/v1`,
+  `EMBEDDING_MODEL=nomic-embed`, `EMBEDDING_FALLBACK_MODEL=nomic-embed`.
+- Profile config.yaml (unless already set): `auxiliary.vision.model=ornith` with
+  `provider: custom` and `base_url: http://127.0.0.1:11434/v1`. Set via
+  `hermes config set auxiliary.vision.model ornith --profile <p>` — agents cannot
+  patch profiles/*/config.yaml directly (write-guard).
+- Detection: `/v1/props` returns llama.cpp shape with `n_ctx` from the live chat
+  model's ctx — Hermes auto-detects `llamacpp` + 65535 without config.
 
 ## How to add / change / remove a model
 
