@@ -2,7 +2,7 @@
 """Gopher's own Step-1 smoke test for the beansd router (spec-verification).
 
 Seeds daemon.bridges directly (no real bridge spawn) and tests the router:
-meta routes from live scan, dispatch by config name + gguf basename, splice
+meta routes from live scan, dispatch by directory name (the model id IS the directory), splice
 passthrough, 404 model_not_found, thread-per-connection.
 """
 import json
