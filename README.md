@@ -134,13 +134,14 @@ and use that same port in every URL above.
 
 ## Examples
 
-`examples/` has two ready-to-run configs (they download their own weights and replicate a
+`examples/` has three ready-to-run configs (they download their own weights and replicate a
 known-good setup — one chat model with full GPU offload, one embeddings model):
 
 - `examples/ornith.config.json` — 9B reasoning chat model, ctx 65535, GPU offload
 - `examples/nomic-embed.config.json` — 768-dim embeddings, small/fast
+- `examples/title-generator.config.json` — 1.5B tiny chat model, ctx 4096, short-label generation (session titles etc.)
 
-Copy either to `$BEANS_ROOT/<name>/config.json` and it provisions itself.
+Copy any of the three to `$BEANS_ROOT/<name>/config.json` and it provisions itself.
 
 ## Notes
 

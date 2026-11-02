@@ -1,0 +1,11 @@
+{
+  "file": "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+  "url": "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+  "sha256": "1adf0b11065d8ad2e8123ea110d1ec956dab4ab038eab665614adba04b6c3370",
+  "ctx": 4096,
+  "threads": 8,
+  "misc_args": ["--n-gpu-layers", "999"],
+  "embeddings": false,
+  "idle_seconds": 600,
+  "vram_headroom_mib": 400
+}
