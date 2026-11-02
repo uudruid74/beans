@@ -85,12 +85,9 @@ don't fight the machine.
 | `file` | yes¹ | GGUF filename in this directory |
 | `url` | no | Download URL; used when the GGUF is missing (auto-provision) |
 | `sha256` | no | Checksum; verified after download before the model is wired |
-| `ctx` | no | Context window in tokens (default 4096) — kept first-class so clients can
-  auto-detect the real window |
+| `ctx` | no | Context window in tokens (default 4096) — kept first-class so clients can auto-detect the real window |
 | `threads` | no | CPU threads (default 4) |
-| `misc_args` | no | Raw pass-through to llama-server (e.g. `["--n-gpu-layers", "999"]` for
-  full GPU offload, or `["--cache-type-k", "q5_1", "--cache-type-v", "q5_1"]` for a
-  quantized KV cache) |
+| `misc_args` | no | Raw pass-through to llama-server (e.g. `["--n-gpu-layers", "999"]` for full GPU offload, or `["--cache-type-k", "q5_1", "--cache-type-v", "q5_1"]` for a quantized KV cache) |
 | `reasoning_budget` | no | Reasoning budget for i1-style reasoning models |
 | `embeddings` | no | `true` runs the model as an embeddings endpoint |
 | `pooling` | no | Embeddings pooling (e.g. `"mean"`) |
