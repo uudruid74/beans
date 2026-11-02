@@ -143,10 +143,13 @@ def main():
         check("dispatch by config name 200", st == 200, str(st))
         check("relay reached backend", b"backend" in body, str(body[:40]))
 
-        # 5. dispatch by gguf basename
+        # 5. gguf basename is NOT an alias (Evan 2026-11-01: model id IS the
+        #    directory, no second source of truth) -> 404 like any unknown
         st, body = http_request(rport, "POST", "/v1/embeddings",
                                 json.dumps({"model": "nomic.gguf", "input": ["x"]}))
-        check("dispatch by gguf basename 200", st == 200, str(st))
+        check("gguf basename is NOT a dispatch alias (404)",
+              st == 404, str(st))
+        check("404 body model_not_found", b"model_not_found" in body, str(body[:60]))
 
         # 6. unknown model -> 404 model_not_found
         st, body = http_request(rport, "POST", "/v1/chat/completions",

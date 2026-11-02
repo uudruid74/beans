@@ -617,11 +617,11 @@ class BeansD:
             "model": name}).encode()
 
     def _bridge_port(self, model):
-        """Dispatch lookup by directory name AND gguf basename."""
+        """Dispatch lookup by directory name only — the model id IS the directory."""
         if not model:
             return None
         for pid, port, name, gguf in self.bridges.values():
-            if model in (name, gguf, os.path.basename(name or "")):
+            if model == name:
                 return port
         return None
 

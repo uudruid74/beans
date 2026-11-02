@@ -14,7 +14,7 @@ container. This file is the operating manual for AI agents that run, debug, or e
 - **Each bridge IS the server; beansd routes.** ONE published port — the beansd router on
   `127.0.0.1:11434` — serves a normal OpenAI API. The `model` field in the request body
   dispatches to the owning bridge (by directory name — the directory name IS the
-  model name; gguf basename also accepted as an alias). Meta routes
+  model name; the model id IS the directory). Meta routes
   (`/v1/models`, `/v1/props`, `/health`) are answered by the router from the live registry,
   so clients auto-detect each model's real context window (llamacpp + 65535). Bridges bind
   loopback (`127.0.0.1`)
