@@ -87,9 +87,11 @@ def main():
         tree = os.path.join(tmp, "tree")
         os.makedirs(tree)
         for d, cfg in [
-            ("ornith", {"name": "ornith", "ctx": 65535, "file": "ornith.Q.gguf"}),
-            ("nomic", {"name": "nomic-embed", "ctx": 8192, "file": "nomic.gguf",
-                       "embeddings": True}),
+            # Model id IS the directory name (no `name` key — removed with the
+            # alias work, Evan 2026-11-01).
+            ("ornith", {"ctx": 65535, "file": "ornith.Q.gguf"}),
+            ("nomic-embed", {"ctx": 8192, "file": "nomic.gguf",
+                             "embeddings": True}),
         ]:
             dd = os.path.join(tree, d)
             os.makedirs(dd)
@@ -105,7 +107,7 @@ def main():
         # Seed bridge records directly (no spawn): (pid, port, name, gguf)
         daemon.bridges = {
             "ornith": (99991, 19091, "ornith", "ornith.Q.gguf"),
-            "nomic": (99992, 19092, "nomic-embed", "nomic.gguf"),
+            "nomic-embed": (99992, 19092, "nomic-embed", "nomic.gguf"),
         }
         backends = {19091: fake_backend(19091), 19092: fake_backend(19092)}
 
