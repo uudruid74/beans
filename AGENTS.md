@@ -34,7 +34,11 @@ docker compose up -d --build            # optional: BEANS_PORT=11434 for a custo
   a worker container on `beans_net`).
 - **Model names are the DIRECTORY names** — there is no `name` key in `config.json`,
   so `mkdir $BEAN_HOLE/anything` makes `"anything"` the model id. On this machine:
-  `ornith` (chat) and `nomic-embed` (embeddings).
+  `ornith` (chat, vision-capable) and `nomic-embed` (embeddings).
+- **Vision** (per model): `"mmproj": "<file>"` in `config.json` (sibling GGUF in
+  the same dir, e.g. `...mmproj-f16.gguf`). beansd adds `--mmproj`, auto-accounts
+  its size in the VRAM guard, auto-downloads it via `mmproj_url`/`mmproj_sha256`,
+  and reports `"vision": true` in `/v1/models` + `/v1/props`.
 - Profile config.yaml (unless already set): `auxiliary.vision.model=ornith` with
   `provider: custom` and `base_url: http://127.0.0.1:11434/v1`. Set via
   `hermes config set auxiliary.vision.model ornith --profile <p>` — agents cannot
@@ -46,7 +50,7 @@ docker compose up -d --build            # optional: BEANS_PORT=11434 for a custo
 
 | Action | What to do |
 |---|---|
-| Add | `mkdir $BEAN_HOLE/<name>` + drop `config.json` (with `url` and/or the GGUF). beansd provisions, downloads if needed, wires it up. No restart. |
+| Add | `mkdir $BEAN_HOLE/<name>` + drop `config.json` (with `url`/`mmproj_url` and/or the GGUFs). beansd provisions, downloads missing files, wires it up. No restart. |
 | Change | Edit that model's `config.json`. Only its bridge is restarted. |
 | Disable | `mv $BEAN_HOLE/<name> $BEAN_HOLE/<name>-disabled`. Ignored; server stopped if running. |
 | Remove | `rm -rf $BEAN_HOLE/<name>`. |

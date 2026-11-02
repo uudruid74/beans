@@ -1,0 +1,15 @@
+{
+  "file": "Ornith-1.5-9B-uncensored.i1-Q4_K_M.gguf",
+  "url": "https://huggingface.co/mradermacher/Ornith-1.5-9B-uncensored-i1-GGUF/resolve/main/Ornith-1.5-9B-uncensored.i1-Q4_K_M.gguf",
+  "sha256": "1a7537e44aaeb2dfc8a4d80a44a98f53fc6f3ab466552d8cbc37c02d32cdb7fa",
+  "mmproj": "Ornith-1.5-9B-uncensored.mmproj-f16.gguf",
+  "mmproj_url": "https://huggingface.co/mradermacher/Ornith-1.5-9B-uncensored-GGUF/resolve/main/Ornith-1.5-9B-uncensored.mmproj-f16.gguf",
+  "mmproj_sha256": "3170dd53d7ed442c944cfb378535e96a5981283d65ec4f6c389f07999f32b380",
+  "ctx": 65535,
+  "threads": 8,
+  "misc_args": ["--n-gpu-layers", "999", "--cache-type-k", "q5_1", "--cache-type-v", "q5_1"],
+  "reasoning_budget": 1024,
+  "embeddings": false,
+  "idle_seconds": 900,
+  "vram_headroom_mib": 2200
+}

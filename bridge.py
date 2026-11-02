@@ -92,6 +92,16 @@ class Bridge:
         self.manager = LlamaManager(self.cfg)
         m = self.cfg["models"][self.name]
         self.weights_mib = os.path.getsize(os.path.join(self.cfg["weights_dir"], m["file"])) / MIB
+        # Auto-account the vision projector (mmproj) in the VRAM guard: it also
+        # loads into VRAM alongside the text model. A missing file falls back to
+        # the text-only estimate — the start will surface the real error.
+        mmproj = m.get("mmproj")
+        if mmproj:
+            try:
+                self.weights_mib += os.path.getsize(
+                    os.path.join(self.cfg["weights_dir"], mmproj)) / MIB
+            except OSError:
+                pass
         self.vram_headroom_mib = float(self.cfg.get("vram_headroom_mib", 800))
 
     def _vram_free_mib(self):

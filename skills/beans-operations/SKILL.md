@@ -43,8 +43,11 @@ A failed download (checksum mismatch, curl error) STAYS `-pending` with a
 | Key | Required | Meaning |
 |---|---|---|
 | `file` | yes¹ | GGUF filename in this directory |
-| `url` | no | Download URL when GGUF missing (auto-provision) |
-| `sha256` | no | Checksum, verified before wiring |
+| `mmproj` | no | Vision-projector GGUF in this dir (enables image input, auto-added to VRAM guard) |
+| `url` | no | Download URL for `file` when missing (auto-provision) |
+| `mmproj_url` | no | Download URL for `mmproj` when missing (auto-provision) |
+| `sha256` | no | Checksum for `file`, verified before wiring |
+| `mmproj_sha256` | no | Checksum for `mmproj`, verified before wiring |
 | `ctx` | no | Context window (default 4096) — clients auto-detect it |
 | `threads` | no | CPU threads (default 4) |
 | `misc_args` | no | Pass-through to llama-server (e.g. `["--n-gpu-layers","999"]`, `["--cache-type-k","q5_1","--cache-type-v","q5_1"]`) |
@@ -54,7 +57,8 @@ A failed download (checksum mismatch, curl error) STAYS `-pending` with a
 | `idle_seconds` | no | Idle timeout before unload (default 300) |
 | `vram_headroom_mib` | no | Extra MiB reserved above GGUF size |
 
-¹ `file` may be omitted if the dir has exactly one `.gguf`.
+¹ `file` may be omitted if the dir has exactly one `.gguf` (the configured
+`mmproj` is excluded from the count).
 Unknown keys are rejected LOUDLY at startup — a bad config errors, never half-setups.
 
 ## Wiring Hermes at it

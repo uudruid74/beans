@@ -51,7 +51,7 @@ FAIL_FILE = ".download.failed"
 
 ALLOWED = {"file", "url", "sha256", "ctx", "threads", "misc_args",
            "reasoning_budget", "embeddings", "pooling", "idle_seconds",
-           "vram_headroom_mib"}
+           "vram_headroom_mib", "mmproj", "mmproj_url", "mmproj_sha256"}
 
 IN_NONBLOCK = 0x00000800
 IN_CLOEXEC = 0x00080000
@@ -204,7 +204,11 @@ class BeansD:
                 continue
             ggu = cfg.get("file") or ""
             if not ggu:
-                files = [x for x in os.listdir(d) if x.endswith(".gguf")]
+                # The mmproj file also ends in .gguf — exclude it from the
+                # auto-detect count so a vision pair still resolves the text file.
+                mmproj_file = cfg.get("mmproj") or ""
+                files = [x for x in os.listdir(d)
+                         if x.endswith(".gguf") and x != mmproj_file]
                 if len(files) == 1:
                     ggu = files[0]
             if ggu:
@@ -244,6 +248,11 @@ class BeansD:
         }
         if cfg.get("reasoning_budget") is not None:
             om["models"][om["default_model"]]["reasoning_budget"] = int(cfg["reasoning_budget"])
+        mmproj = cfg.get("mmproj")
+        if mmproj:
+            om["models"][om["default_model"]]["mmproj"] = mmproj
+            om["server_args"] += ["--mmproj", os.path.join(
+                "/beans", os.path.basename(m["dir"]), mmproj)]
         if cfg.get("embeddings"):
             om["server_args"] += ["--embeddings"]
             if cfg.get("pooling"):
@@ -280,21 +289,44 @@ class BeansD:
             pass
 
     # ------------------------------------------------------------- downloads
+    def _missing_artifacts(self, dpath, cfg):
+        """Return list of (kind, dest, url, sha) for artifacts not yet present."""
+        out = []
+        ggu = cfg.get("file")
+        if ggu and not os.path.exists(os.path.join(dpath, ggu)):
+            out.append(("file", ggu, cfg.get("url"), cfg.get("sha256")))
+        mp = cfg.get("mmproj")
+        if mp and not os.path.exists(os.path.join(dpath, mp)):
+            out.append(("mmproj", mp, cfg.get("mmproj_url"), cfg.get("mmproj_sha256")))
+        return out
+
     def start_download(self, dpath, cfg):
         base = os.path.basename(dpath)
         name = base[:-len(SUF_PENDING)]
-        url = cfg.get("url")
-        ggu = cfg.get("file")
-        if not url or not ggu:
-            log("ERROR: %s pending but no url/file — remove the dir or fix config" % dpath)
+        missing = self._missing_artifacts(dpath, cfg)
+        if not missing:
+            log("ERROR: %s pending but nothing missing — fix config" % dpath)
             return
-        dest = os.path.join(dpath, ggu)
-        proc = subprocess.Popen(["curl", "-L", "-C", "-", "-sS", "--fail", "-o", dest, url])
+        # every missing artifact needs a url
+        for kind, dest, url, sha in missing:
+            if not url:
+                log("ERROR: %s pending but no url for %s (%s) — remove the dir or fix config"
+                    % (dpath, kind, dest))
+                return
+        # launch one curl per missing artifact
+        procs = []
+        dl_list = []
+        for kind, dest, url, sha in missing:
+            dd = os.path.join(dpath, dest)
+            proc = subprocess.Popen(["curl", "-L", "-C", "-", "-sS", "--fail",
+                                     "-o", dd, url])
+            procs.append(proc.pid)
+            dl_list.append({"kind": kind, "dest": dest, "url": url, "sha": sha})
         with io.open(os.path.join(dpath, PID_FILE), "w", encoding="utf-8") as f:
-            json.dump({"pid": proc.pid, "url": url, "dest": dest,
+            json.dump({"pids": procs, "downloads": dl_list,
                        "started": time.time()}, f)
-        self.downloads[dpath] = proc.pid
-        log("download %s: pid %d %s" % (name, proc.pid, url))
+        self.downloads[dpath] = procs
+        log("download %s: pids %s" % (name, ",".join(str(p) for p in procs)))
 
     def check_pending(self, m, cfg):
         """Handle a -pending dir. Returns True if it became active-ready (wired next pass)."""
@@ -320,46 +352,51 @@ class BeansD:
                     pid_info = json.load(f)
             except ValueError:
                 pid_info = None
-        gguf = None
-        for f in os.listdir(dpath):
-            if f.endswith(".gguf"):
-                gguf = os.path.join(dpath, f)
-                break
-        if pid_info and self._proc_alive(pid_info.get("pid")):
-            return False  # still downloading
+        # any download still running?
         if pid_info:
-            dest = pid_info.get("dest")
-            if gguf and os.path.exists(gguf):
-                # download finished — verify sha if configured
-                if cfg is not None and cfg.get("sha256"):
-                    if self._verify(gguf, cfg["sha256"]):
-                        log("verified sha256 for %s" % name)
-                    else:
-                        log("ERROR: sha256 mismatch for %s — keeping -pending (fix config to retry)" % name)
-                        with io.open(fail_path, "w", encoding="utf-8") as f:
-                            f.write("sha256 mismatch\n")
-                        try:
-                            os.unlink(pid_path)
-                        except OSError:
-                            pass
-                        return False
-                # promote back to active
-                new_path = os.path.join(self.tree, name)
-                try:
-                    os.rename(dpath, new_path)
-                except OSError as e:
-                    log("ERROR: cannot promote %s: %s" % (dpath, e))
+            for pid in pid_info.get("pids", []) or [pid_info.get("pid")]:
+                if pid and self._proc_alive(pid):
+                    return False  # still downloading
+        missing = self._missing_artifacts(dpath, cfg)
+        if not missing:
+            # all artifacts present — verify shas before promoting
+            artifacts = [("file", cfg.get("file"), cfg.get("sha256"))]
+            if cfg.get("mmproj"):
+                artifacts.append(("mmproj", cfg.get("mmproj"), cfg.get("mmproj_sha256")))
+            for kind, fname, want in artifacts:
+                if not fname:
+                    continue
+                path = os.path.join(dpath, fname)
+                if not os.path.exists(path):
+                    missing.append((kind, fname, None, None))
+                    continue
+                if want and not self._verify(path, want):
+                    log("ERROR: sha256 mismatch for %s %s — keeping -pending (fix config to retry)"
+                        % (name, kind))
+                    with io.open(fail_path, "w", encoding="utf-8") as f:
+                        f.write("sha256 mismatch: %s\n" % kind)
+                    try:
+                        os.unlink(pid_path)
+                    except OSError:
+                        pass
                     return False
-                try:  # pid file MOVED with the dir — unlink at the NEW path
-                    os.unlink(os.path.join(new_path, PID_FILE))
-                except OSError:
-                    pass
-                self.downloads.pop(dpath, None)
-                log("download complete — %s active" % name)
-                return True
-            # process died, no gguf — resume (curl -C - continues partial)
-            log("resuming download %s (previous pid %s gone)" % (name, pid_info.get("pid")))
-        # no pid or dead without file → (re)start
+            log("verified sha256 for %s" % name)
+            # promote back to active
+            new_path = os.path.join(self.tree, name)
+            try:
+                os.rename(dpath, new_path)
+            except OSError as e:
+                log("ERROR: cannot promote %s: %s" % (dpath, e))
+                return False
+            try:  # pid file MOVED with the dir — unlink at the NEW path
+                os.unlink(os.path.join(new_path, PID_FILE))
+            except OSError:
+                pass
+            self.downloads.pop(dpath, None)
+            log("download complete — %s active" % name)
+            return True
+        # process died with artifacts still missing — resume (curl -C - continues partial)
+        log("resuming download %s (previous pids gone)" % name)
         self.start_download(dpath, cfg)
         return False
 
@@ -407,13 +444,17 @@ class BeansD:
                 base = os.path.basename(m["dir"])
                 cfg = m["cfg"] or {}
                 has_gguf = m["gguf"] and os.path.exists(m["gguf"])
-                if not has_gguf:
-                    if cfg.get("url") and cfg.get("file"):
+                has_mmproj = True
+                mp = cfg.get("mmproj")
+                if mp:
+                    has_mmproj = os.path.exists(os.path.join(m["dir"], mp))
+                if not has_gguf or not has_mmproj:
+                    if (cfg.get("url") or cfg.get("mmproj_url")):
                         # rename to -pending and let the pending path handle it
                         pend = os.path.join(self.tree, base + SUF_PENDING)
                         try:
                             os.rename(m["dir"], pend)
-                            log("no gguf — %s -> %s (download)" % (base, base + SUF_PENDING))
+                            log("missing artifact — %s -> %s (download)" % (base, base + SUF_PENDING))
                             changed_any = True
                         except OSError as e:
                             log("ERROR: cannot rename %s: %s" % (m["dir"], e))
@@ -586,9 +627,12 @@ class BeansD:
                 continue
             cfg = m["cfg"] or {}
             name = os.path.basename(m["dir"])
-            data.append({"id": name, "object": "model", "created": 0,
-                         "owned_by": "beans",
-                         "context_length": int(cfg.get("ctx", 4096))})
+            entry = {"id": name, "object": "model", "created": 0,
+                     "owned_by": "beans",
+                     "context_length": int(cfg.get("ctx", 4096))}
+            if cfg.get("mmproj"):
+                entry["vision"] = True
+            data.append(entry)
         return json.dumps({"object": "list", "data": data}).encode()
 
     def _props_body(self):
@@ -601,6 +645,7 @@ class BeansD:
         """
         ctx = 4096
         name = ""
+        vision = False
         for m in self.scan():
             if m["status"] == "active" and m["gguf"]:
                 cfg = m["cfg"] or {}
@@ -608,13 +653,17 @@ class BeansD:
                     continue
                 ctx = int(cfg.get("ctx", 4096))
                 name = os.path.basename(m["dir"])
+                vision = bool(cfg.get("mmproj"))
                 break
-        return json.dumps({
+        body = {
             "default_generation_settings": {"n_ctx": ctx},
             "model_hparams": {"n_ctx_train": ctx},
             "n_ctx": ctx,
             "status": "ok",
-            "model": name}).encode()
+            "model": name,
+            "vision": vision,
+        }
+        return json.dumps(body).encode()
 
     def _bridge_port(self, model):
         """Dispatch lookup by directory name only — the model id IS the directory."""

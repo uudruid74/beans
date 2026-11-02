@@ -78,13 +78,22 @@ If there isn't enough free VRAM to load a model, the request **fails immediately
 503 naming the model and the numbers — no hold, no retry, no thrashing. Fix the workflow,
 don't fight the machine.
 
+**Vision models:** when a model has an `mmproj`, its size is added to the VRAM
+guard automatically (`need = text GGUF + mmproj + headroom`), so a vision pair
+(9B + f16 projector ≈ 6.5GB) fits on an 8GB card without bumping
+`vram_headroom_mib`. `/v1/models` and `/v1/props` report `"vision": true` when
+an `mmproj` is configured.
+
 ## config.json format
 
 | Key | Required | Meaning |
 |---|---|---|
 | `file` | yes¹ | GGUF filename in this directory |
-| `url` | no | Download URL; used when the GGUF is missing (auto-provision) |
-| `sha256` | no | Checksum; verified after download before the model is wired |
+| `mmproj` | no | Vision-projector filename in this directory (enables image input, e.g. `...mmproj-f16.gguf`) |
+| `url` | no | Download URL for `file`; used when the GGUF is missing (auto-provision) |
+| `mmproj_url` | no | Download URL for `mmproj`; used when the projector is missing (auto-provision) |
+| `sha256` | no | Checksum for `file`; verified after download before the model is wired |
+| `mmproj_sha256` | no | Checksum for `mmproj`; verified after download before the model is wired |
 | `ctx` | no | Context window in tokens (default 4096) — kept first-class so clients can auto-detect the real window |
 | `threads` | no | CPU threads (default 4) |
 | `misc_args` | no | Raw pass-through to llama-server (e.g. `["--n-gpu-layers", "999"]` for full GPU offload, or `["--cache-type-k", "q5_1", "--cache-type-v", "q5_1"]` for a quantized KV cache) |
@@ -131,14 +140,15 @@ and use that same port in every URL above.
 
 ## Examples
 
-`examples/` has three ready-to-run configs (they download their own weights and replicate a
+`examples/` has four ready-to-run configs (they download their own weights and replicate a
 known-good setup — one chat model with full GPU offload, one embeddings model):
 
 - `examples/ornith.config.json` — 9B reasoning chat model, ctx 65535, GPU offload
+- `examples/ornith-vision.config.json` — 9B reasoning chat + **vision** (mmproj pair, image input)
 - `examples/nomic-embed.config.json` — 768-dim embeddings, small/fast
 - `examples/title-generator.config.json` — 1.5B tiny chat model, ctx 4096, short-label generation (session titles etc.)
 
-Copy any of the three to `$BEAN_HOLE/<name>/config.json` and it provisions itself.
+Copy any of the four to `$BEAN_HOLE/<name>/config.json` and it provisions itself.
 
 ## Notes
 
