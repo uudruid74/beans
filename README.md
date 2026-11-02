@@ -18,11 +18,11 @@ live registry, so clients auto-detect each model's true context window (e.g. lla
 ## Quick start
 
 ```sh
-export BEANS_ROOT=/path/to/models          # required
+export BEAN_HOLE=/path/to/models          # required
 docker compose up -d --build
 ```
 
-Create `$BEANS_ROOT/<name>/config.json` — **the directory name IS the model name**
+Create `$BEAN_HOLE/<name>/config.json` — **the directory name IS the model name**
 (client sends `"model":"<name>"`, e.g. `my-model` below). That's the whole setup:
 
 ```json
@@ -141,7 +141,7 @@ known-good setup — one chat model with full GPU offload, one embeddings model)
 - `examples/nomic-embed.config.json` — 768-dim embeddings, small/fast
 - `examples/title-generator.config.json` — 1.5B tiny chat model, ctx 4096, short-label generation (session titles etc.)
 
-Copy any of the three to `$BEANS_ROOT/<name>/config.json` and it provisions itself.
+Copy any of the three to `$BEAN_HOLE/<name>/config.json` and it provisions itself.
 
 ## Notes
 

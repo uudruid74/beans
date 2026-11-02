@@ -5,7 +5,7 @@ container. This file is the operating manual for AI agents that run, debug, or e
 
 ## The mental model
 
-- **The registry is the truth.** `BEANS_ROOT/<model>/` = one directory per model:
+- **The registry is the truth.** `BEAN_HOLE/<model>/` = one directory per model:
   weights GGUF + `config.json`. Everything the container runs is *derived from this tree*.
 - **One supervisor, no magic.** `beansd.py` (PID 1) watches the tree with inotify and
   reconciles state on every change: spawn/kill bridges, run downloads.
@@ -24,7 +24,7 @@ container. This file is the operating manual for AI agents that run, debug, or e
 ## Setup
 
 ```sh
-export BEANS_ROOT=/path/to/models        # REQUIRED — compose fails loud without it
+export BEAN_HOLE=/path/to/models        # REQUIRED — compose fails loud without it
 docker compose up -d --build            # optional: BEANS_PORT=11434 for a custom port
 ```
 
@@ -33,7 +33,7 @@ docker compose up -d --build            # optional: BEANS_PORT=11434 for a custo
 - Base URL everywhere: `http://127.0.0.1:11434/v1` (or `http://beans:11434/v1` from
   a worker container on `beans_net`).
 - **Model names are the DIRECTORY names** — there is no `name` key in `config.json`,
-  so `mkdir $BEANS_ROOT/anything` makes `"anything"` the model id. On this machine:
+  so `mkdir $BEAN_HOLE/anything` makes `"anything"` the model id. On this machine:
   `ornith` (chat) and `nomic-embed` (embeddings).
 - Profile config.yaml (unless already set): `auxiliary.vision.model=ornith` with
   `provider: custom` and `base_url: http://127.0.0.1:11434/v1`. Set via
@@ -46,10 +46,10 @@ docker compose up -d --build            # optional: BEANS_PORT=11434 for a custo
 
 | Action | What to do |
 |---|---|
-| Add | `mkdir $BEANS_ROOT/<name>` + drop `config.json` (with `url` and/or the GGUF). beansd provisions, downloads if needed, wires it up. No restart. |
+| Add | `mkdir $BEAN_HOLE/<name>` + drop `config.json` (with `url` and/or the GGUF). beansd provisions, downloads if needed, wires it up. No restart. |
 | Change | Edit that model's `config.json`. Only its bridge is restarted. |
-| Disable | `mv $BEANS_ROOT/<name> $BEANS_ROOT/<name>-disabled`. Ignored; server stopped if running. |
-| Remove | `rm -rf $BEANS_ROOT/<name>`. |
+| Disable | `mv $BEAN_HOLE/<name> $BEAN_HOLE/<name>-disabled`. Ignored; server stopped if running. |
+| Remove | `rm -rf $BEAN_HOLE/<name>`. |
 
 Watch it happen: `docker logs -f beans`.
 
@@ -85,12 +85,12 @@ Watch it happen: `docker logs -f beans`.
 
 - Files: `beansd.py` (supervisor), `bridge.py` (per-model wake + splice + VRAM guard),
   `entrypoint.sh` (execs beansd), `Dockerfile` (llama.cpp server-cuda),
-  `docker-compose.yml` (BEANS_ROOT required), `vendor/llama_ondemand` (patched — see
+  `docker-compose.yml` (BEAN_HOLE required), `vendor/llama_ondemand` (patched — see
   README "Notes").
 - Config source of truth: the `ALLOWED` set + `write_ondemand()` in `beansd.py`; the
   `config.json` table in README. Add a key to both, or the registry rejects it.
 - Registry key `misc_args` maps to llama-ondemand's internal `server_args` (see
   `write_ondemand`) — the public schema is `ctx` (first-class) + `misc_args`
   (pass-through).
-- Rebuild after any change: `docker build -t beans:1ctr . && BEANS_ROOT=... docker compose
+- Rebuild after any change: `docker build -t beans:1ctr . && BEAN_HOLE=... docker compose
   up -d --force-recreate`. Verify boot with the diagnostics cheatsheet before declaring done.

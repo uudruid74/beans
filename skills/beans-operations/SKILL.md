@@ -11,7 +11,7 @@ what an agent needs to USE it — not the container's internals.
 
 ## The one rule
 
-**The directory name IS the model name.** `BEANS_ROOT/<name>/` = model id `<name>`.
+**The directory name IS the model name.** `BEAN_HOLE/<name>/` = model id `<name>`.
 Nothing in `config.json` names the model. Registry lives at `/home/ekl/beans/` here.
 Dispatch is **directory-name ONLY** — the gguf basename is NOT an alias (Evan
 2026-11-01: one source of truth; a basename map is extra complexity with zero gain

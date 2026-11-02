@@ -1,6 +1,6 @@
 # beans — ONE container, registry-driven local inference.
-# Required: BEANS_ROOT must point at your models registry (see README.md).
-#   BEANS_ROOT=/srv/models docker compose up -d --build
+# Required: BEAN_HOLE must point at your models registry (see README.md).
+#   BEAN_HOLE=/srv/models docker compose up -d --build
 # No personal paths live anywhere in this repo.
 #
 # No Olla: each model's bridge IS the server. ONE published port — the beansd
@@ -27,7 +27,7 @@ services:
       retries: 3
       start_period: 10s
     volumes:
-      - ${BEANS_ROOT:?Set BEANS_ROOT to your models registry root (one dir per model)}:/beans
+      - ${BEAN_HOLE:?Set BEAN_HOLE to your models registry root (one dir per model)}:/beans
     networks:
       - default
       - beans_net

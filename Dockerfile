@@ -1,4 +1,4 @@
-# beans — ONE container, ONE source of truth (BEANS_ROOT/<model>/ tree).
+# beans — ONE container, ONE source of truth (BEAN_HOLE/<model>/ tree).
 # beansd (inotify supervisor) wires one event-driven bridge per model; the
 # bridge IS the OpenAI-compatible server (load on demand, die on idle).
 FROM ghcr.io/ggml-org/llama.cpp:server-cuda
