@@ -111,14 +111,6 @@ the docked registry on this machine has `ornith` (chat, ctx 65535) and
 `nomic-embed` (embeddings, ctx 2048). Whatever you name a registry directory
 is the `model` string clients must send.
 
-**Embeddings** (in `~/.hermes/.env`):
-
-```sh
-EMBEDDING_API_BASE=http://127.0.0.1:11434/v1
-EMBEDDING_MODEL=nomic-embed
-EMBEDDING_FALLBACK_MODEL=nomic-embed
-```
-
 **Vision / auxiliary chat** (profile `config.yaml`, via `hermes config set`):
 
 ```yaml

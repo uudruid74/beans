@@ -60,8 +60,6 @@ Unknown keys are rejected LOUDLY at startup — a bad config errors, never half-
 ## Wiring Hermes at it
 
 - Base URL everywhere: `http://127.0.0.1:11434/v1` · model = directory name.
-- Embeddings (in `~/.hermes/.env`): `EMBEDDING_API_BASE=http://127.0.0.1:11434/v1`,
-  `EMBEDDING_MODEL=nomic-embed`, `EMBEDDING_FALLBACK_MODEL=nomic-embed`.
 - Aux slots (profile config.yaml, ALWAYS via `hermes config set`, never patch):
   `hermes config set auxiliary.vision.model <name> --profile <p>` + provider
   `custom` / base_url `http://127.0.0.1:11434/v1`.

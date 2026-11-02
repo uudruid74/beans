@@ -35,8 +35,6 @@ docker compose up -d --build            # optional: BEANS_PORT=11434 for a custo
 - **Model names are the DIRECTORY names** — there is no `name` key in `config.json`,
   so `mkdir $BEANS_ROOT/anything` makes `"anything"` the model id. On this machine:
   `ornith` (chat) and `nomic-embed` (embeddings).
-- Env (shared): `EMBEDDING_API_BASE=http://127.0.0.1:11434/v1`,
-  `EMBEDDING_MODEL=nomic-embed`, `EMBEDDING_FALLBACK_MODEL=nomic-embed`.
 - Profile config.yaml (unless already set): `auxiliary.vision.model=ornith` with
   `provider: custom` and `base_url: http://127.0.0.1:11434/v1`. Set via
   `hermes config set auxiliary.vision.model ornith --profile <p>` — agents cannot
