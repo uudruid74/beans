@@ -13,6 +13,16 @@ what an agent needs to USE it — not the container's internals.
 
 **The directory name IS the model name.** `BEANS_ROOT/<name>/` = model id `<name>`.
 Nothing in `config.json` names the model. Registry lives at `/home/ekl/beans/` here.
+Dispatch is **directory-name ONLY** — the gguf basename is NOT an alias (Evan
+2026-11-01: one source of truth; a basename map is extra complexity with zero gain
+and conflict risk if the same gguf sits in two dirs).
+
+## Hot-fallback GGUFs (Evan 2026-11-01)
+
+A directory may hold MULTIPLE `.gguf` files; `config.json`'s `file` key picks the
+active one. As long as that filename exists on disk the model is ready; if missing,
+beansd downloads it. To swap models: edit `file` (and `url`/`sha256` for a new
+download) — no directory rename, no rebuild.
 
 ## Lifecycle — what you do, what beans does
 
